@@ -1,5 +1,3 @@
-import { ComingSoonScreen } from '@/modules/configs/components/ComingSoonScreen';
+import { ClockScreen } from '@/modules/alarms/screens/ClockScreen';
 
-export default function ClockRoute() {
-  return <ComingSoonScreen title="Reloj" />;
-}
+export default ClockScreen;

@@ -1,5 +1,3 @@
-import { ComingSoonScreen } from '@/modules/configs/components/ComingSoonScreen';
+import { TaskDetailScreen } from '@/modules/tasks/screens/TaskDetailScreen';
 
-export default function TaskDetailRoute() {
-  return <ComingSoonScreen title="Tarea" />;
-}
+export default TaskDetailScreen;
