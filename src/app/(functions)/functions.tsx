@@ -1,5 +1,3 @@
-import { ComingSoonScreen } from '@/modules/configs/components/ComingSoonScreen';
+import { FunctionsScreen } from '@/modules/functions/screens/FunctionsScreen';
 
-export default function FunctionsRoute() {
-  return <ComingSoonScreen title="Funciones" />;
-}
+export default FunctionsScreen;

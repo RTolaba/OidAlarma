@@ -1,5 +1,3 @@
-import { ComingSoonScreen } from '@/modules/configs/components/ComingSoonScreen';
+import { PomodoroScreen } from '@/modules/advanced/screens/PomodoroScreen';
 
-export default function PomodoroRoute() {
-  return <ComingSoonScreen title="Pomodoro" />;
-}
+export default PomodoroScreen;

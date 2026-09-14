@@ -1,5 +1,3 @@
-import { ComingSoonScreen } from '@/modules/configs/components/ComingSoonScreen';
+import { AdvancedFunctionsScreen } from '@/modules/advanced/screens/AdvancedFunctionsScreen';
 
-export default function AdvancedRoute() {
-  return <ComingSoonScreen title="Avanzado" />;
-}
+export default AdvancedFunctionsScreen;
