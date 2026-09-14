@@ -6,6 +6,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { useResolvedColorScheme, useTheme } from '@/hooks/use-theme';
+import { TriggerWatcher } from '@/modules/advanced/components/TriggerWatcher';
 
 export function AppProviders({ children }: { children: ReactNode }) {
   const scheme = useResolvedColorScheme();
@@ -30,6 +31,7 @@ export function AppProviders({ children }: { children: ReactNode }) {
           }}>
           <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
           {children}
+          <TriggerWatcher />
         </ThemeProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
