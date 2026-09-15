@@ -5,6 +5,7 @@ import { persistedStorage } from '@/modules/configs/stores/storage';
 import { createId } from '@/utils/id';
 
 import type { Alarm, AlarmDraft } from '../types/alarm';
+import { reconcileAlarms, type NativeAlarmState } from '../utils/reconcile';
 import { DEFAULT_RINGTONE, resolveRingtone } from '../utils/ringtones';
 
 type AlarmsState = {
@@ -17,6 +18,12 @@ type AlarmsState = {
   removeAlarm: (id: string) => void;
   ring: (id: string) => void;
   dismiss: () => void;
+  /** Cierra el overlay sin apagar ni cambiar la alarma. */
+  snooze: () => void;
+  /** Apaga una alarma concreta (p. ej. desde la activity nativa). */
+  dismissById: (id: string) => void;
+  /** Adopta lo que decidio el lado nativo mientras JS no estaba vivo. */
+  reconcileWithNative: (native: NativeAlarmState, now?: number) => void;
 };
 
 const byTime = (a: Alarm, b: Alarm) => a.hour * 60 + a.minute - (b.hour * 60 + b.minute);
@@ -25,6 +32,13 @@ const normalize = (alarm: Alarm): Alarm => ({
   ...alarm,
   ringtone: resolveRingtone(alarm.ringtone).id,
 });
+
+/** Una alarma sin repeticion se apaga sola cuando suena y se descarta. */
+const disableIfOneShot = (alarms: Alarm[], id: string | null) => {
+  const alarm = alarms.find((item) => item.id === id);
+  if (!alarm || alarm.days.length > 0) return alarms;
+  return alarms.map((item) => (item.id === alarm.id ? { ...item, enabled: false } : item));
+};
 
 export const useAlarmsStore = create<AlarmsState>()(
   persist(
@@ -63,16 +77,20 @@ export const useAlarmsStore = create<AlarmsState>()(
         })),
       ring: (id) => set({ ringingId: id }),
       dismiss: () =>
+        set((state) => ({
+          alarms: disableIfOneShot(state.alarms, state.ringingId),
+          ringingId: null,
+        })),
+      snooze: () => set({ ringingId: null }),
+      dismissById: (id) =>
+        set((state) => ({
+          alarms: disableIfOneShot(state.alarms, id),
+          ringingId: state.ringingId === id ? null : state.ringingId,
+        })),
+      reconcileWithNative: (native, now) =>
         set((state) => {
-          const alarm = state.alarms.find((item) => item.id === state.ringingId);
-          const alarms =
-            alarm && alarm.days.length === 0
-              ? state.alarms.map((item) =>
-                  item.id === alarm.id ? { ...item, enabled: false } : item,
-                )
-              : state.alarms;
-
-          return { alarms, ringingId: null };
+          const alarms = reconcileAlarms(state.alarms, native, now);
+          return alarms === state.alarms ? state : { alarms };
         }),
     }),
     {

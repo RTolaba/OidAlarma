@@ -2,34 +2,40 @@ import { requireOptionalNativeModule } from 'expo';
 import { Platform } from 'react-native';
 
 import type { Alarm } from '../types/alarm';
+import type { NativeAlarmState } from './reconcile';
+import { resolveRingtone } from './ringtones';
+
+/** Lo que cruza el puente hacia Kotlin, sin campos derivados de JS. */
+type NativeAlarmPayload = {
+  id: string;
+  label: string;
+  hour: number;
+  minute: number;
+  days: number[];
+  enabled: boolean;
+  smart: boolean;
+  ringtone: string;
+};
 
 type NativeAlarmLockScreen = {
-  syncAlarms: (
-    alarms: Array<{
-      id: string;
-      label: string;
-      hour: number;
-      minute: number;
-      days: number[];
-      enabled: boolean;
-      smart: boolean;
-    }>,
-  ) => Promise<void>;
-  dismiss: () => Promise<void>;
-  consumePendingAlarmId: () => string | null;
+  syncAlarms: (alarms: NativeAlarmPayload[]) => Promise<void>;
+  pullNativeState: () => Promise<NativeAlarmState>;
+  presentPendingAlarm: () => void;
   canUseFullScreenIntent: () => boolean;
   requestFullScreenIntentSettings: () => Promise<void>;
-  activateLockScreen: () => void;
-  deactivateLockScreen: () => void;
   addListener: (
-    event: 'onAlarm',
-    listener: (event: { alarmId: string }) => void,
+    event: 'onAlarm' | 'onAlarmHandled',
+    listener: (event: { alarmId: string; action?: string }) => void,
   ) => { remove: () => void };
 };
 
 const native = requireOptionalNativeModule<NativeAlarmLockScreen>('AlarmLockScreen');
 
-let askedFullScreen = false;
+/**
+ * Android 14+ exige un permiso aparte para la pantalla completa. Se pide una
+ * sola vez por sesion: mandar al usuario a Ajustes en cada sync es spam.
+ */
+let askedForFullScreenIntent = false;
 
 export function canUseNativeLockScreen() {
   return Platform.OS === 'android' && native != null;
@@ -37,6 +43,7 @@ export function canUseNativeLockScreen() {
 
 export async function syncNativeLockScreenAlarms(alarms: Alarm[]) {
   if (!native) return false;
+
   await native.syncAlarms(
     alarms.map((alarm) => ({
       id: alarm.id,
@@ -46,34 +53,43 @@ export async function syncNativeLockScreenAlarms(alarms: Alarm[]) {
       days: alarm.days,
       enabled: alarm.enabled,
       smart: alarm.smart,
+      ringtone: resolveRingtone(alarm.ringtone).id,
     })),
   );
-  if (!askedFullScreen && !native.canUseFullScreenIntent()) {
-    askedFullScreen = true;
+
+  if (!askedForFullScreenIntent && !native.canUseFullScreenIntent()) {
+    askedForFullScreenIntent = true;
     await native.requestFullScreenIntentSettings();
   }
+
   return true;
 }
 
-export function subscribeToNativeLockScreen(onAlarm: (alarmId: string) => void) {
+/** Estado real del lado nativo, para reconciliar antes de sincronizar. */
+export async function pullNativeAlarmState(): Promise<NativeAlarmState | null> {
+  if (!native) return null;
+  return native.pullNativeState();
+}
+
+export function subscribeToNativeLockScreen(
+  onAlarm: (alarmId: string) => void,
+  onHandled: (event: { alarmId: string; action: 'dismiss' | 'snooze' }) => void,
+) {
   if (!native) return () => {};
 
-  const pending = native.consumePendingAlarmId();
-  if (pending) onAlarm(pending);
+  native.presentPendingAlarm();
 
-  const subscription = native.addListener('onAlarm', (event) => {
+  const alarmSub = native.addListener('onAlarm', (event) => {
     if (event.alarmId) onAlarm(event.alarmId);
   });
+  const handledSub = native.addListener('onAlarmHandled', (event) => {
+    if (event.action === 'snooze' || event.action === 'dismiss') {
+      onHandled({ alarmId: event.alarmId, action: event.action });
+    }
+  });
 
-  return () => subscription.remove();
-}
-
-export async function dismissNativeLockScreen() {
-  if (!native) return;
-  native.deactivateLockScreen();
-  await native.dismiss();
-}
-
-export function activateNativeLockScreen() {
-  native?.activateLockScreen();
+  return () => {
+    alarmSub.remove();
+    handledSub.remove();
+  };
 }

@@ -7,6 +7,9 @@ import android.content.Intent
 class BootReceiver : BroadcastReceiver() {
   override fun onReceive(context: Context, intent: Intent) {
     if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
-    AlarmStore.load(context).filter { it.enabled }.forEach { NativeAlarmScheduler.schedule(context, it) }
+    // nextTriggerAt ya prioriza un snooze vigente, asi que se reprograma solo.
+    AlarmStore.load(context)
+      .filter { it.enabled }
+      .forEach { NativeAlarmScheduler.schedule(context, it) }
   }
 }

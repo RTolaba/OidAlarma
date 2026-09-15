@@ -16,24 +16,39 @@ object AlarmStore {
 
   fun load(context: Context): List<StoredAlarm> {
     val raw = prefs(context).getString(KEY_ALARMS, null) ?: return emptyList()
-    val json = JSONArray(raw)
-    return buildList {
-      for (index in 0 until json.length()) {
-        add(StoredAlarm.fromJson(json.getJSONObject(index)))
+    return try {
+      val json = JSONArray(raw)
+      buildList {
+        for (index in 0 until json.length()) {
+          add(StoredAlarm.fromJson(json.getJSONObject(index)))
+        }
       }
+    } catch (_: Exception) {
+      emptyList()
     }
   }
+
+  fun find(context: Context, alarmId: String): StoredAlarm? =
+    load(context).firstOrNull { it.id == alarmId }
+
+  /** Reescribe una alarma puntual sin tocar las demas. */
+  fun update(context: Context, alarmId: String, transform: (StoredAlarm) -> StoredAlarm): StoredAlarm? {
+    var updated: StoredAlarm? = null
+    val alarms = load(context).map { alarm ->
+      if (alarm.id != alarmId) alarm else transform(alarm).also { updated = it }
+    }
+    if (updated != null) save(context, alarms)
+    return updated
+  }
+
+  fun setSnooze(context: Context, alarmId: String, until: Long) =
+    update(context, alarmId) { it.copy(snoozeUntil = until) }
+
+  fun clearSnooze(context: Context, alarmId: String) =
+    update(context, alarmId) { it.copy(snoozeUntil = 0L) }
 
   fun setPending(context: Context, alarmId: String?) {
     prefs(context).edit().putString(KEY_PENDING, alarmId).apply()
-  }
-
-  fun consumePending(context: Context): String? {
-    val id = prefs(context).getString(KEY_PENDING, null)
-    if (id != null) {
-      prefs(context).edit().remove(KEY_PENDING).apply()
-    }
-    return id
   }
 
   fun peekPending(context: Context): String? = prefs(context).getString(KEY_PENDING, null)

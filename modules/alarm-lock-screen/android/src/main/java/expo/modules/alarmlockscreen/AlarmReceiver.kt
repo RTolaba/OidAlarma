@@ -3,32 +3,19 @@ package expo.modules.alarmlockscreen
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.os.Build
 import android.os.PowerManager
 
 class AlarmReceiver : BroadcastReceiver() {
   override fun onReceive(context: Context, intent: Intent) {
     val alarmId = intent.getStringExtra(NativeAlarmScheduler.EXTRA_ALARM_ID) ?: return
-    val alarm = AlarmStore.load(context).firstOrNull { it.id == alarmId } ?: return
+    if (AlarmStore.find(context, alarmId) == null) return
 
+    // El snooze ya se consumio: si no se limpia, reprogramar lo repetiria.
+    AlarmStore.clearSnooze(context, alarmId)
     AlarmStore.setPending(context, alarmId)
     NativeAlarmScheduler.rescheduleIfNeeded(context, alarmId)
     wakeScreen(context)
-    AlarmPresenter.show(context, alarm)
-
-    try {
-      val launch = context.packageManager.getLaunchIntentForPackage(context.packageName)
-      if (launch != null) {
-        launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-        launch.putExtra(NativeAlarmScheduler.EXTRA_ALARM_ID, alarmId)
-        launch.putExtra("oidalarma.ring", true)
-        context.startActivity(launch)
-      }
-    } catch (_: Exception) {
-      // El full-screen intent de la notificación es el camino oficial.
-    }
-
-    AlarmLockScreenModule.emitAlarm(alarmId)
+    AlarmRingService.start(context, alarmId)
   }
 
   private fun wakeScreen(context: Context) {

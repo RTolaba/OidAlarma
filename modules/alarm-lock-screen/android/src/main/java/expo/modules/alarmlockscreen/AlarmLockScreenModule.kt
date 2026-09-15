@@ -1,12 +1,10 @@
 package expo.modules.alarmlockscreen
 
-import android.app.KeyguardManager
 import android.app.NotificationManager
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
-import android.view.WindowManager
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import java.lang.ref.WeakReference
@@ -15,7 +13,7 @@ class AlarmLockScreenModule : Module() {
   override fun definition() = ModuleDefinition {
     Name("AlarmLockScreen")
 
-    Events("onAlarm")
+    Events("onAlarm", "onAlarmHandled")
 
     OnCreate {
       instance = WeakReference(this@AlarmLockScreenModule)
@@ -28,10 +26,9 @@ class AlarmLockScreenModule : Module() {
     }
 
     OnActivityEntersForeground {
-      val pending = appContext.reactContext?.let { AlarmStore.peekPending(it) }
-      if (pending != null) {
-        sendEvent("onAlarm", mapOf("alarmId" to pending))
-      }
+      val context = appContext.reactContext ?: return@OnActivityEntersForeground
+      val pending = AlarmStore.peekPending(context) ?: return@OnActivityEntersForeground
+      context.startActivity(NativeAlarmScheduler.ringIntent(context, pending))
     }
 
     AsyncFunction("syncAlarms") { alarms: List<Map<String, Any?>> ->
@@ -40,14 +37,23 @@ class AlarmLockScreenModule : Module() {
       NativeAlarmScheduler.sync(context, alarms.map(StoredAlarm::fromMap))
     }
 
-    AsyncFunction("dismiss") {
+    /**
+     * Verdad del lado nativo. JS la usa para reconciliar antes del primer
+     * sync, para no revivir un one-shot apagado ni pisar un snooze.
+     */
+    AsyncFunction("pullNativeState") {
       val context = context()
-      AlarmStore.setPending(context, null)
-      AlarmPresenter.dismiss(context)
+      mapOf(
+        "alarms" to AlarmStore.load(context).map { it.toMap() },
+        "pendingAlarmId" to AlarmStore.peekPending(context),
+      )
     }
 
-    Function("consumePendingAlarmId") {
-      appContext.reactContext?.let { AlarmStore.consumePending(it) }
+    Function("presentPendingAlarm") {
+      val context = context()
+      val pending = AlarmStore.peekPending(context) ?: return@Function null
+      context.startActivity(NativeAlarmScheduler.ringIntent(context, pending))
+      null
     }
 
     Function("canUseFullScreenIntent") {
@@ -65,51 +71,30 @@ class AlarmLockScreenModule : Module() {
       }
       null
     }
-
-    Function("activateLockScreen") {
-      appContext.currentActivity?.runOnUiThread {
-        val activity = appContext.currentActivity ?: return@runOnUiThread
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-          activity.setShowWhenLocked(true)
-          activity.setTurnScreenOn(true)
-        } else {
-          @Suppress("DEPRECATION")
-          activity.window.addFlags(
-            WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
-              WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
-              WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON,
-          )
-        }
-        activity.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-          val keyguard = activity.getSystemService(KeyguardManager::class.java)
-          keyguard?.requestDismissKeyguard(activity, null)
-        }
-      }
-      null
-    }
-
-    Function("deactivateLockScreen") {
-      appContext.currentActivity?.runOnUiThread {
-        appContext.currentActivity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-      }
-      null
-    }
   }
 
   private fun context() = requireNotNull(appContext.reactContext)
 
   private fun canUseFullScreen(): Boolean {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) return true
-    val manager = context().getSystemService(NotificationManager::class.java)
-    return manager.canUseFullScreenIntent()
+    return context().getSystemService(NotificationManager::class.java).canUseFullScreenIntent()
   }
 
   companion object {
     private var instance: WeakReference<AlarmLockScreenModule>? = null
 
-    fun emitAlarm(alarmId: String) {
-      instance?.get()?.sendEvent("onAlarm", mapOf("alarmId" to alarmId))
+    /**
+     * Si JS esta vivo, Zustand se entera al instante. Si no, el proximo
+     * `pullNativeState` cubre el hueco.
+     */
+    fun emitHandled(alarmId: String?, action: String) {
+      instance?.get()?.sendEvent(
+        "onAlarmHandled",
+        mapOf(
+          "alarmId" to (alarmId ?: ""),
+          "action" to action,
+        ),
+      )
     }
   }
 }

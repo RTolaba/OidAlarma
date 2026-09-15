@@ -12,7 +12,14 @@ data class StoredAlarm(
   val days: List<Int>,
   val enabled: Boolean,
   val smart: Boolean,
+  val ringtone: String,
+  /** Epoch ms del aplazamiento vigente. 0 = sin snooze. Vive solo en nativo. */
+  val snoozeUntil: Long = 0L,
 ) {
+  val isOneShot: Boolean get() = days.isEmpty()
+
+  fun hasActiveSnooze(fromMillis: Long = System.currentTimeMillis()) = snoozeUntil > fromMillis
+
   fun toJson(): JSONObject =
     JSONObject()
       .put("id", id)
@@ -22,9 +29,30 @@ data class StoredAlarm(
       .put("days", JSONArray(days))
       .put("enabled", enabled)
       .put("smart", smart)
+      .put("ringtone", ringtone)
+      .put("snoozeUntil", snoozeUntil)
 
+  /** Forma que cruza el puente hacia JS. Los epoch van como Double. */
+  fun toMap(): Map<String, Any?> =
+    mapOf(
+      "id" to id,
+      "label" to label,
+      "hour" to hour,
+      "minute" to minute,
+      "days" to days,
+      "enabled" to enabled,
+      "smart" to smart,
+      "ringtone" to ringtone,
+      "snoozeUntil" to snoozeUntil.toDouble(),
+    )
+
+  /**
+   * Proximo disparo. Un snooze vigente gana sobre el horario configurado,
+   * asi el aplazamiento sobrevive a un sync o a un reboot.
+   */
   fun nextTriggerAt(fromMillis: Long = System.currentTimeMillis()): Long {
-    val from = Calendar.getInstance().apply { timeInMillis = fromMillis }
+    if (hasActiveSnooze(fromMillis)) return snoozeUntil
+
     val candidate = Calendar.getInstance().apply {
       timeInMillis = fromMillis
       set(Calendar.HOUR_OF_DAY, hour)
@@ -34,7 +62,7 @@ data class StoredAlarm(
     }
 
     if (days.isEmpty()) {
-      if (candidate.timeInMillis <= from.timeInMillis) {
+      if (candidate.timeInMillis <= fromMillis) {
         candidate.add(Calendar.DAY_OF_YEAR, 1)
       }
       return candidate.timeInMillis
@@ -50,7 +78,7 @@ data class StoredAlarm(
         set(Calendar.MILLISECOND, 0)
       }
       val weekDay = next.get(Calendar.DAY_OF_WEEK) - 1
-      if (next.timeInMillis > from.timeInMillis && days.contains(weekDay)) {
+      if (next.timeInMillis > fromMillis && days.contains(weekDay)) {
         return next.timeInMillis
       }
     }
@@ -74,9 +102,12 @@ data class StoredAlarm(
         days = days,
         enabled = json.optBoolean("enabled", true),
         smart = json.optBoolean("smart", false),
+        ringtone = json.optString("ringtone", "ring_rock").ifBlank { "ring_rock" },
+        snoozeUntil = json.optLong("snoozeUntil", 0L),
       )
     }
 
+    /** Lo que manda JS. Nunca trae snoozeUntil: ese dato es solo nativo. */
     fun fromMap(map: Map<String, Any?>): StoredAlarm {
       val rawDays = map["days"]
       val days = when (rawDays) {
@@ -91,7 +122,24 @@ data class StoredAlarm(
         days = days,
         enabled = map["enabled"] as? Boolean ?: true,
         smart = map["smart"] as? Boolean ?: false,
+        ringtone = map["ringtone"] as? String ?: "ring_rock",
       )
+    }
+
+    /**
+     * Fusiona lo que llega de JS con lo que solo sabe nativo. JS manda en
+     * horario/label/tono; nativo manda en el snooze vigente.
+     */
+    fun merge(
+      incoming: List<StoredAlarm>,
+      previous: List<StoredAlarm>,
+      fromMillis: Long = System.currentTimeMillis(),
+    ): List<StoredAlarm> {
+      val bySavedId = previous.associateBy { it.id }
+      return incoming.map { alarm ->
+        val saved = bySavedId[alarm.id]?.snoozeUntil ?: 0L
+        alarm.copy(snoozeUntil = if (saved > fromMillis) saved else 0L)
+      }
     }
   }
 }

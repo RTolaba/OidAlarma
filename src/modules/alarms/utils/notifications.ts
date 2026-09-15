@@ -3,9 +3,11 @@ import { Platform } from 'react-native';
 import type { Alarm } from '../types/alarm';
 import {
   canUseNativeLockScreen,
+  pullNativeAlarmState,
   subscribeToNativeLockScreen,
   syncNativeLockScreenAlarms,
 } from './lockScreen';
+import type { NativeAlarmState } from './reconcile';
 
 /** En web el SO no programa alarmas locales. En Expo Go sí se puede, sin el módulo de push. */
 export function canUseNativeNotifications() {
@@ -24,37 +26,34 @@ async function loadNative() {
 
 export async function syncAlarmNotifications(alarms: Alarm[]) {
   if (canUseNativeLockScreen()) {
-    try {
-      const permissions = await loadNative();
-      if (permissions) {
-        const allowed = await permissions.requestAlarmPermissions();
-        if (!allowed) return false;
-      }
-      return await syncNativeLockScreenAlarms(alarms);
-    } catch {
-      return false;
+    const permissions = await loadNative();
+    if (permissions) {
+      const allowed = await permissions.requestAlarmPermissions();
+      if (!allowed) return false;
     }
+    return syncNativeLockScreenAlarms(alarms);
   }
 
   const native = await loadNative();
   if (!native) return false;
-  try {
-    return await native.syncAlarmNotifications(alarms);
-  } catch {
-    return false;
-  }
+  return native.syncAlarmNotifications(alarms);
 }
 
-export async function subscribeToAlarmNotifications(onAlarm: (alarmId: string) => void) {
+/** Solo hay estado nativo que reconciliar en el camino del modulo Android. */
+export async function pullAlarmState(): Promise<NativeAlarmState | null> {
+  if (!canUseNativeLockScreen()) return null;
+  return pullNativeAlarmState();
+}
+
+export async function subscribeToAlarmNotifications(
+  onAlarm: (alarmId: string) => void,
+  onHandled?: (event: { alarmId: string; action: 'dismiss' | 'snooze' }) => void,
+) {
   if (canUseNativeLockScreen()) {
-    return subscribeToNativeLockScreen(onAlarm);
+    return subscribeToNativeLockScreen(onAlarm, onHandled ?? (() => {}));
   }
 
   const native = await loadNative();
   if (!native) return () => {};
-  try {
-    return native.subscribeToAlarmNotifications(onAlarm);
-  } catch {
-    return () => {};
-  }
+  return native.subscribeToAlarmNotifications(onAlarm);
 }

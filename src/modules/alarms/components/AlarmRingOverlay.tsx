@@ -1,15 +1,7 @@
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { createAudioPlayer, setAudioModeAsync, type AudioPlayer } from 'expo-audio';
 import { useEffect, useRef } from 'react';
-import {
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Vibration,
-  View,
-} from 'react-native';
+import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Vibration, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/ui/Button';
@@ -22,7 +14,8 @@ import { useMainStore } from '@/modules/configs/stores/main';
 import { formatHourMinute, type WeekDay } from '@/utils/time';
 
 import { useAlarmsStore } from '../stores/alarms';
-import { activateNativeLockScreen, dismissNativeLockScreen } from '../utils/lockScreen';
+import { SNOOZE_MINUTES } from '../utils/constants';
+import { canUseNativeLockScreen } from '../utils/lockScreen';
 import { resolveRingtone } from '../utils/ringtones';
 import { MathChallenge } from './MathChallenge';
 
@@ -33,10 +26,16 @@ const minuteKey = (date: Date) =>
   `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}-${date.getHours()}-${date.getMinutes()}`;
 
 /**
- * Overlay a pantalla completa cuando suena una alarma. En Android nativo el
- * full-screen intent también la levanta con el celular bloqueado.
+ * En Android el ring lo dibuja AlarmRingActivity, que funciona con la app
+ * muerta. Este overlay es el plan B para las plataformas sin modulo nativo:
+ * si existe el nativo, no se monta y no toca audio ni vibracion.
  */
 export function AlarmRingOverlay() {
+  if (canUseNativeLockScreen()) return null;
+  return <JsAlarmRingOverlay />;
+}
+
+function JsAlarmRingOverlay() {
   const theme = useTheme();
   const now = useNow(1000);
   const timeFormat = useMainStore((state) => state.timeFormat);
@@ -45,6 +44,7 @@ export function AlarmRingOverlay() {
   const ringingId = useAlarmsStore((state) => state.ringingId);
   const ring = useAlarmsStore((state) => state.ring);
   const dismiss = useAlarmsStore((state) => state.dismiss);
+  const snooze = useAlarmsStore((state) => state.snooze);
 
   const firedRef = useRef<Set<string>>(new Set());
   const playerRef = useRef<AudioPlayer | null>(null);
@@ -82,7 +82,6 @@ export function AlarmRingOverlay() {
     playerRef.current = player;
     player.replace(ringtone.source);
 
-    activateNativeLockScreen();
     void activateKeepAwakeAsync(KEEP_AWAKE_TAG);
 
     void (async () => {
@@ -113,23 +112,11 @@ export function AlarmRingOverlay() {
     };
   }, []);
 
-  const handleDismiss = () => {
-    void dismissNativeLockScreen();
-    dismiss();
-  };
-
   if (!alarm) return null;
 
   return (
-    <Modal
-      visible
-      animationType="fade"
-      presentationStyle="fullScreen"
-      statusBarTranslucent
-      navigationBarTranslucent
-      hardwareAccelerated
-      onRequestClose={() => {}}>
-      <SafeAreaView style={[styles.safe, { backgroundColor: theme.background }]} edges={['top', 'bottom', 'left', 'right']}>
+    <View style={[styles.overlay, { backgroundColor: theme.background }]} pointerEvents="auto">
+      <SafeAreaView style={styles.safe} edges={['top', 'bottom', 'left', 'right']}>
         <KeyboardAvoidingView style={styles.flex} behavior="padding">
           <ScrollView
             keyboardShouldPersistTaps="handled"
@@ -146,25 +133,44 @@ export function AlarmRingOverlay() {
               </ThemedText>
             </View>
 
-            {alarm.smart ? (
-              <MathChallenge onSolved={handleDismiss} />
-            ) : (
+            {alarm.smart ? <MathChallenge onSolved={dismiss} /> : null}
+
+            <View style={styles.actions}>
+              {!alarm.smart ? (
+                <Button
+                  label="Apagar alarma"
+                  icon="alarmOff"
+                  size="large"
+                  fullWidth
+                  onPress={dismiss}
+                />
+              ) : null}
               <Button
-                label="Apagar alarma"
-                icon="alarmOff"
+                label={`Aplazar ${SNOOZE_MINUTES} min`}
+                icon="clock"
+                variant={alarm.smart ? 'primary' : 'secondary'}
                 size="large"
                 fullWidth
-                onPress={handleDismiss}
+                onPress={snooze}
               />
-            )}
+            </View>
           </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
-    </Modal>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  overlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 999,
+    elevation: 24,
+  },
   safe: {
     flex: 1,
   },
@@ -182,5 +188,9 @@ const styles = StyleSheet.create({
   header: {
     alignItems: 'center',
     gap: Spacing.two,
+  },
+  actions: {
+    width: '100%',
+    gap: Spacing.three,
   },
 });
