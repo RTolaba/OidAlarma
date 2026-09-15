@@ -29,7 +29,9 @@
         "USE_FULL_SCREEN_INTENT",
         "TURN_SCREEN_ON",
         "WAKE_LOCK",
-        "VIBRATE"
+        "VIBRATE",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_MEDIA_PLAYBACK"
       ]
     },
     "web": {

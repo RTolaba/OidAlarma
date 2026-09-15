@@ -1,5 +1,3 @@
-import { ComingSoonScreen } from '@/modules/configs/components/ComingSoonScreen';
+import { AlarmScreen } from '@/modules/alarms/screens/AlarmScreen';
 
-export default function AlarmsRoute() {
-  return <ComingSoonScreen title="Alarmas" />;
-}
+export default AlarmScreen;

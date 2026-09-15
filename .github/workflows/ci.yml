@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Si llegan varios pushes seguidos, solo interesa verificar el ultimo.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verificar:
+    name: Tipos, lint y tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Bajar el repo
+        uses: actions/checkout@v5
+
+      - name: Preparar Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      # npm ci instala exactamente lo del package-lock y falla si esta
+      # desincronizado, que es justo lo que se quiere en CI.
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Tipos
+        run: npx tsc --noEmit
+
+      - name: Lint
+        run: npx expo lint
+
+      - name: Tests
+        run: npx jest --ci

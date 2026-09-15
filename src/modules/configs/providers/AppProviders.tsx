@@ -5,6 +5,9 @@ import { StyleSheet } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { AlarmRingOverlay } from '@/modules/alarms/components/AlarmRingOverlay';
+import { AlarmScheduler } from '@/modules/alarms/components/AlarmScheduler';
+import { TriggerWatcher } from '@/modules/advanced/components/TriggerWatcher';
 import { useResolvedColorScheme, useTheme } from '@/hooks/use-theme';
 
 export function AppProviders({ children }: { children: ReactNode }) {
@@ -14,7 +17,7 @@ export function AppProviders({ children }: { children: ReactNode }) {
 
   return (
     <GestureHandlerRootView style={styles.root}>
-      <SafeAreaProvider>
+      <SafeAreaProvider style={styles.root}>
         <ThemeProvider
           value={{
             ...navigationTheme,
@@ -30,6 +33,9 @@ export function AppProviders({ children }: { children: ReactNode }) {
           }}>
           <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
           {children}
+          <AlarmScheduler />
+          <AlarmRingOverlay />
+          <TriggerWatcher />
         </ThemeProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
