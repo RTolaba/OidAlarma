@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 
 import { Button } from '@/components/ui/Button';
 import { PopUp } from '@/components/ui/PopUp';
@@ -41,13 +41,15 @@ export function AlarmFormPopUp({ visible, alarm, onClose }: AlarmFormPopUpProps)
   const [value, setValue] = useState<AlarmFormValue>(() =>
     alarm ? toFormValue(alarm) : EMPTY_FORM,
   );
-  const sessionRef = useRef(formSession(visible, alarm));
+  const [session, setSession] = useState(() => formSession(visible, alarm));
   const editing = alarm != null;
-  const session = formSession(visible, alarm);
 
-  if (session !== sessionRef.current) {
-    sessionRef.current = session;
-    if (session) setValue(alarm ? toFormValue(alarm) : EMPTY_FORM);
+  // Reinicia el formulario cuando cambia lo que se esta editando, sin
+  // esperar a un efecto: React descarta este render y vuelve a empezar.
+  const currentSession = formSession(visible, alarm);
+  if (currentSession !== session) {
+    setSession(currentSession);
+    if (currentSession) setValue(alarm ? toFormValue(alarm) : EMPTY_FORM);
   }
 
   const handleSave = () => {

@@ -17,7 +17,7 @@ export function AppProviders({ children }: { children: ReactNode }) {
 
   return (
     <GestureHandlerRootView style={styles.root}>
-      <SafeAreaProvider>
+      <SafeAreaProvider style={styles.root}>
         <ThemeProvider
           value={{
             ...navigationTheme,
